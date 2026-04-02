@@ -10,71 +10,68 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential dpkg-dev
+          sudo apt-get install -y build-essential dpkg-dev
 
-      - name: Build
+      - name: Build program
         run: |
-          gcc -O2 -Wall -Wextra -o main_word main-word.c
+          gcc -O2 -Wall -Wextra -o main_word src/main-word.c
           mkdir -p usr/bin
-          cp -v main_word usr/bin/main_word
+          cp main_word usr/bin/main_word
 
-      - name: Test
+      - name: Run tests
         run: |
           set -e
           BIN="./usr/bin/main_word"
 
-          run_test () {
+          test_case () {
             name="$1"
             input="$2"
             expected="$3"
-            out="$(printf "%s\n" "$input" | "$BIN" | tr -d '\r')"
-            echo "$out" | grep -qE "$expected"
+            output="$(printf "%s\n" "$input" | "$BIN")"
+            echo "$output" | grep -q "$expected"
             echo "PASS: $name"
           }
 
-          run_test "empty" "" "Number of words in string = 0"
-          run_test "one word" "hello" "Number of words in string = 1"
-          run_test "two words" "hello world" "Number of words in string = 2"
-          run_test "many spaces" "  hello   world  " "Number of words in string = 2"
-          run_test "tabs" $'hello\tworld test' "Number of words in string = 3"
+          test_case "empty string" "" "Number of words in string = 0"
+          test_case "one word" "hello" "Number of words in string = 1"
+          test_case "two words" "hello world" "Number of words in string = 2"
+          test_case "spaces" "  hello   world  " "Number of words in string = 2"
+          test_case "tabs" $'hello\tworld test' "Number of words in string = 3"
 
-      - name: Package deb
+      - name: Build deb package
         run: |
-          set -e
           NAME="main-word"
-          BINNAME="main_word"
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
           ARCH="amd64"
-          VERSION="0.1.0-${GITHUB_SHA:0:8}"
 
           rm -rf package dist
           mkdir -p package/DEBIAN package/usr/bin dist
-          install -m 0755 "./usr/bin/${BINNAME}" "package/usr/bin/${BINNAME}"
+          cp usr/bin/main_word package/usr/bin/
 
-          SIZE_KB="$(du -sk package/usr | awk '{print $1}')"
+          SIZE=$(du -sk package/usr | awk '{print $1}')
 
           cat > package/DEBIAN/control <<EOF
-          Package: ${NAME}
-          Version: ${VERSION}
+          Package: $NAME
+          Version: $VERSION
           Section: utils
           Priority: optional
-          Architecture: ${ARCH}
+          Architecture: $ARCH
           Depends: libc6
-          Installed-Size: ${SIZE_KB}
-          Maintainer: Student <student@example.com>
-          Description: Program that counts number of words in a string.
+          Installed-Size: $SIZE
+          Maintainer: Student
+          Description: Program that counts number of words in a string
           EOF
 
-          dpkg-deb --build package "dist/${NAME}_${VERSION}_${ARCH}.deb"
+          dpkg-deb --build package dist/${NAME}_${VERSION}_${ARCH}.deb
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
         with:
           name: deb-package
           path: dist/*.deb
-          if-no-files-found: error
